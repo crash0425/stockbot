@@ -1,104 +1,99 @@
-# app.py
-from flask import Flask, render_template_string
-from screener import run_screener, LATEST_RESULTS
-import threading
-import time
+# screener.py
+import yfinance as yf
+import pandas as pd
+import numpy as np
 import pytz
 from datetime import datetime
-import os
-from twilio.rest import Client
+from ta.momentum import RSIIndicator
+from ta.trend import MACD
+from ta.volatility import BollingerBands
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier
 
-app = Flask(__name__)
+# Tickers to scan
+TICKERS = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'META', 'AMZN', 'GOOGL', 'JPM', 'UNH', 'HD']
 
-last_run_time = "Never"
+# Shared models
+rf = RandomForestClassifier(n_estimators=100, random_state=42)
+xgb = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
+logreg = LogisticRegression()
 
-# Twilio setup (use environment variables for security)
-TWILIO_SID = os.getenv("TWILIO_SID")
-TWILIO_AUTH = os.getenv("TWILIO_AUTH")
-TWILIO_FROM = os.getenv("TWILIO_FROM")
-TWILIO_TO = os.getenv("TWILIO_TO")
+# Cached results
+LATEST_RESULTS = pd.DataFrame()
 
-def send_sms_alert(message):
-    try:
-        client = Client(TWILIO_SID, TWILIO_AUTH)
-        client.messages.create(
-            body=message,
-            from_=TWILIO_FROM,
-            to=TWILIO_TO
-        )
-        print("✅ SMS alert sent.")
-    except Exception as e:
-        print(f"❌ Failed to send SMS: {e}")
+def engineer_features(df):
+    df['Return_1d'] = df['Close'].pct_change()
+    df['Target'] = (df['Close'].shift(-5) > df['Close'] * 1.02).astype(int)
+    df['RSI'] = RSIIndicator(df['Close']).rsi()
+    macd = MACD(df['Close'])
+    df['MACD'] = macd.macd()
+    df['MACD_Signal'] = macd.macd_signal()
+    bb = BollingerBands(df['Close'])
+    df['BB_High'] = bb.bollinger_hband()
+    df['BB_Low'] = bb.bollinger_lband()
+    return df.dropna()
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Swing Trade Screener</title>
-    <style>
-        body { font-family: Arial; margin: 40px; }
-        table { border-collapse: collapse; width: 100%; }
-        th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
-        th { background-color: #f2f2f2; }
-        tr:hover { background-color: #f9f9f9; }
-    </style>
-</head>
-<body>
-    <h1>📈 Daily Swing Trade Screener</h1>
-    <p><strong>Last updated:</strong> {{ last_run }}</p>
-    <table>
-        <thead>
-            <tr>
-                {% for col in columns %}<th>{{ col }}</th>{% endfor %}
-            </tr>
-        </thead>
-        <tbody>
-            {% for row in data %}
-            <tr>
-                {% for col in columns %}<td>{{ row[col] }}</td>{% endfor %}
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</body>
-</html>
-"""
+def backtest_model(df, features):
+    X = df[features]
+    y = df['Target']
+    preds = []
+    for i in range(200, len(df) - 5):
+        X_train = X[:i]
+        y_train = y[:i]
+        X_pred = X[i:i+1]
 
-@app.route("/")
-def home():
-    return "<h2>✅ Swing Trade Screener is live. Visit <a href='/screener'>/screener</a> to view signals.</h2>"
+        rf.fit(X_train, y_train)
+        xgb.fit(X_train, y_train)
+        logreg.fit(X_train, y_train)
 
-@app.route("/screener")
-def screener():
-    global last_run_time
-    try:
-        df = LATEST_RESULTS if not LATEST_RESULTS.empty else run_screener()
-    except Exception as e:
-        print(f"❌ Screener crash: {e}")
-        return f"Error running screener: {e}"
-    return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"), last_run=last_run_time)
+        avg_prob = (rf.predict_proba(X_pred)[:, 1][0] +
+                    xgb.predict_proba(X_pred)[:, 1][0] +
+                    logreg.predict_proba(X_pred)[:, 1][0]) / 3
+        pred = 1 if avg_prob > 0.6 else 0
+        actual = y[i]
+        preds.append((pred, actual))
 
-@app.route("/test-alert")
-def test_alert():
-    global last_run_time
-    try:
-        df = run_screener()
-        last_run_time = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d %I:%M %p EST")
-        strong_buys = df[df['Signal'] == '🌟 Strong Buy']['Ticker'].tolist()
-        if strong_buys:
-            alert = f"📈 Swing Trade Alert\n🌟 Strong Buy: {', '.join(strong_buys)}\nAs of {last_run_time}"
-            send_sms_alert(alert)
-        return f"Test run complete. Sent alert for: {', '.join(strong_buys) if strong_buys else 'None'}"
-    except Exception as e:
-        print(f"❌ Test alert crash: {e}")
-        return f"Error during test alert: {e}"
+    correct = sum(1 for p, a in preds if p == a and p == 1)
+    total = sum(1 for p, _ in preds if p == 1)
+    return round((correct / total) * 100, 1) if total else 0, total
 
-# Temporarily disabled scheduler for debugging
-#if __name__ == "__main__":
-#    thread = threading.Thread(target=scheduler)
-#    thread.daemon = True
-#    thread.start()
-#    app.run(host="0.0.0.0", port=5000)
+def run_screener():
+    global LATEST_RESULTS
+    results = []
+    for ticker in TICKERS:
+        try:
+            df = yf.download(ticker, period='1y', interval='1d')
+            df = engineer_features(df)
+            features = ['RSI', 'MACD', 'MACD_Signal', 'BB_High', 'BB_Low', 'Return_1d']
+            X = df[features]
+            y = df['Target']
+            X_train, X_test = X[:-1], X[-1:]
+            y_train = y[:-1]
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
+            rf.fit(X_train, y_train)
+            xgb.fit(X_train, y_train)
+            logreg.fit(X_train, y_train)
+
+            avg_prob = (rf.predict_proba(X_test)[:, 1][0] +
+                        xgb.predict_proba(X_test)[:, 1][0] +
+                        logreg.predict_proba(X_test)[:, 1][0]) / 3
+
+            if avg_prob > 0.6:
+                win_rate, past_signals = backtest_model(df, features)
+                signal_label = '🌟 Strong Buy' if avg_prob > 0.7 and win_rate > 65 else '✅ Buy'
+                results.append({
+                    'Ticker': ticker,
+                    'Date': df.index[-1].date(),
+                    'RSI': round(X_test['RSI'].values[0], 2),
+                    'MACD': round(X_test['MACD'].values[0], 2),
+                    'Confidence': f"{avg_prob * 100:.1f}%",
+                    'Backtest Win Rate': f"{win_rate}%",
+                    'Past Signals': past_signals,
+                    'Signal': signal_label
+                })
+        except Exception as e:
+            print(f"Error processing {ticker}: {e}")
+
+    LATEST_RESULTS = pd.DataFrame(results)
+    return LATEST_RESULTS if not LATEST_RESULTS.empty else pd.DataFrame([{"Message": "No strong signals today."}])
