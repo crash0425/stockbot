@@ -1,0 +1,9 @@
+Flask
+yfinance
+ta
+xgboost
+scikit-learn
+pandas
+numpy
+pytz
+twilio
