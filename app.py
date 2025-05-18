@@ -64,7 +64,15 @@ def run_screener():
     for ticker in TICKERS:
         try:
             df = yf.download(ticker, period='1y', interval='1d')
+            if df.empty:
+                print(f"No data for {ticker}")
+                continue
+
             df = engineer_features(df)
+            if df.empty:
+                print(f"No engineered data for {ticker}")
+                continue
+
             features = ['RSI', 'MACD', 'MACD_Signal', 'BB_High', 'BB_Low', 'Return_1d']
             X = df[features]
             y = df['Target']
