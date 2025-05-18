@@ -64,6 +64,10 @@ HTML_TEMPLATE = """
 </html>
 """
 
+@app.route("/")
+def home():
+    return "<h2>✅ Swing Trade Screener is live. Visit <a href='/screener'>/screener</a> to view signals.</h2>"
+
 @app.route("/screener")
 def screener():
     global last_run_time
