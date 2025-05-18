@@ -47,9 +47,15 @@ def screener():
 
 @app.route("/test-alert")
 def test_alert():
-    df = run_screener()
-    strong_buys = df[df['Signal'] == '🌟 Strong Buy']['Ticker'].tolist()
-    return f"Test complete. Strong Buy tickers: {', '.join(strong_buys) if strong_buys else 'None'}"
+    try:
+        df = run_screener()
+        if 'Signal' in df.columns:
+            strong_buys = df[df['Signal'] == '🌟 Strong Buy']['Ticker'].tolist()
+            return f"Test complete. Strong Buy tickers: {', '.join(strong_buys) if strong_buys else 'None'}"
+        else:
+            return "No 'Signal' column found. Screener may have returned an empty or placeholder result."
+    except Exception as e:
+        return f"Error during test-alert: {e}"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
