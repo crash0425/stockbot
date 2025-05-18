@@ -49,11 +49,11 @@ def screener():
 def test_alert():
     try:
         df = run_screener()
-        if 'Signal' in df.columns:
+        if 'Signal' in df.columns and not df.empty:
             strong_buys = df[df['Signal'] == '🌟 Strong Buy']['Ticker'].tolist()
             return f"Test complete. Strong Buy tickers: {', '.join(strong_buys) if strong_buys else 'None'}"
         else:
-            return "No 'Signal' column found. Screener may have returned an empty or placeholder result."
+            return "No Strong Buy signals today."
     except Exception as e:
         return f"Error during test-alert: {e}"
 
