@@ -1,7 +1,15 @@
 from flask import Flask, render_template_string
 from screener import run_screener, LATEST_RESULTS
+import os
+from twilio.rest import Client
 
 app = Flask(__name__)
+
+# Twilio setup
+TWILIO_SID = os.getenv("TWILIO_SID")
+TWILIO_AUTH = os.getenv("TWILIO_AUTH")
+TWILIO_FROM = os.getenv("TWILIO_FROM")
+TWILIO_TO = os.getenv("TWILIO_TO")
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -51,7 +59,16 @@ def test_alert():
         df = run_screener()
         if 'Signal' in df.columns and not df.empty:
             strong_buys = df[df['Signal'] == '🌟 Strong Buy']['Ticker'].tolist()
-            return f"Test complete. Strong Buy tickers: {', '.join(strong_buys) if strong_buys else 'None'}"
+            if strong_buys:
+                message = f"📈 Swing Trade Alert\n🌟 Strong Buy: {', '.join(strong_buys)}"
+                try:
+                    client = Client(TWILIO_SID, TWILIO_AUTH)
+                    client.messages.create(body=message, from_=TWILIO_FROM, to=TWILIO_TO)
+                    return f"SMS sent: {message}"
+                except Exception as sms_error:
+                    return f"❌ SMS failed: {sms_error}"
+            else:
+                return "No Strong Buy signals today."
         else:
             return "No Strong Buy signals today."
     except Exception as e:
