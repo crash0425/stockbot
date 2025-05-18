@@ -44,3 +44,12 @@ def home():
 def screener():
     df = LATEST_RESULTS if not LATEST_RESULTS.empty else run_screener()
     return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"))
+
+@app.route("/test-alert")
+def test_alert():
+    df = run_screener()
+    strong_buys = df[df['Signal'] == '🌟 Strong Buy']['Ticker'].tolist()
+    return f"Test complete. Strong Buy tickers: {', '.join(strong_buys) if strong_buys else 'None'}"
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
