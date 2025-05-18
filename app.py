@@ -70,6 +70,17 @@ def screener():
     df = LATEST_RESULTS if not LATEST_RESULTS.empty else run_screener()
     return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"), last_run=last_run_time)
 
+@app.route("/test-alert")
+def test_alert():
+    global last_run_time
+    df = run_screener()
+    last_run_time = datetime.now(pytz.timezone('US/Eastern')).strftime("%Y-%m-%d %I:%M %p EST")
+    strong_buys = df[df['Signal'] == '🌟 Strong Buy']['Ticker'].tolist()
+    if strong_buys:
+        alert = f"📈 Swing Trade Alert\n🌟 Strong Buy: {', '.join(strong_buys)}\nAs of {last_run_time}"
+        send_sms_alert(alert)
+    return f"Test run complete. Sent alert for: {', '.join(strong_buys) if strong_buys else 'None'}"
+
 def scheduler():
     global last_run_time
     while True:
