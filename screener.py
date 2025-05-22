@@ -7,7 +7,7 @@ from datetime import datetime
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
-from yahoo_fin.stock_info import get_quote_table, get_income_statement
+
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
@@ -54,11 +54,9 @@ def run_screener(tickers):
 
             latest = df.iloc[-1]
 
-            # Fundamentals
-            fundamentals = get_quote_table(ticker, dict_result=True)
-            
-            pe_ratio = fundamentals.get("PE Ratio (TTM)", None)
-            eps = fundamentals.get("EPS (TTM)", None)
+            # Fundamentals (via yfinance)
+            pe_ratio = info.get("trailingPE", None)
+            eps = info.get("trailingEps", None)
 
             if (
                 latest['Rel_Volume'] > 1.5 and
