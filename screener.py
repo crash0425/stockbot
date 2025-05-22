@@ -18,6 +18,8 @@ LATEST_RESULTS = pd.DataFrame()
 def run_screener(tickers):
     results = []
     for ticker in tickers:
+        if not ticker.isalpha() or len(ticker) < 1:
+            continue
         try:
             # Sector check
             # info = yf.Ticker(ticker).info  # Temporarily disabled to reduce memory load
