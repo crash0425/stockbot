@@ -79,11 +79,9 @@ def run_screener(tickers):
                     'MACD > Signal': latest['MACD'] > latest['MACD_Signal'],
                     'Near BB High': latest['Close'] > latest['BB_High'] * 0.95,
                     'Signal': '🌟 Strong Buy',
-                    'Explanation': explanation,
-                    
-                    
+                    'Explanation': explanation
                 })
-                    time.sleep(0.1)
+                time.sleep(0.1)
         except Exception as e:
             print(f"Error processing {ticker}: {e}")
 
