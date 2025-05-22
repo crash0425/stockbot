@@ -44,7 +44,7 @@ def home():
 
 @app.route("/screener")
 def screener():
-    tickers = tickers_sp500()[:100]
+    tickers = tickers_sp500()[:250]
     df = run_screener(tickers)
     return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"))
 
