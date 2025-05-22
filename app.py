@@ -38,6 +38,10 @@ HTML_TEMPLATE = """
 </html>
 """
 
+@app.route("/")
+def home():
+    return "✅ Swing Trade Screener is live", 200
+
 @app.route("/screener")
 def screener():
     tickers = tickers_sp500()[:100]
