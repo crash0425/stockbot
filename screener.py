@@ -7,7 +7,7 @@ from datetime import datetime
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
-from yahoo_fin.stock_info import get_quote_table
+from yahoo_fin.stock_info import get_quote_table, get_income_statement, get_company_info
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
@@ -16,17 +16,16 @@ from xgboost import XGBClassifier
 LATEST_RESULTS = pd.DataFrame()
 
 def run_screener(tickers):
-    from yahoo_fin.stock_info import get_quote_table, get_income_statement, get_company_info
-    from yahoo_fin.stock_info import get_quote_table, get_income_statement
-    from yahoo_fin.stock_info import get_quote_table
     results = []
     for ticker in tickers:
         try:
+            # Sector check
             info = get_company_info(ticker)
             sector = info.loc['sector'][0] if 'sector' in info.index else None
             if sector != 'Technology':
                 continue
-        try:
+
+            # Historical price data
             df = yf.download(ticker, period='6mo', interval='1d')
             if df.empty or len(df) < 50:
                 continue
@@ -55,6 +54,7 @@ def run_screener(tickers):
 
             latest = df.iloc[-1]
 
+            # Fundamentals
             fundamentals = get_quote_table(ticker, dict_result=True)
             income_statement = get_income_statement(ticker, quarterly=False)
             revenue_growth = None
@@ -68,8 +68,10 @@ def run_screener(tickers):
                 earnings_growth = (earnings_current - earnings_prev) / abs(earnings_prev)
             except:
                 pass
+
             pe_ratio = fundamentals.get("PE Ratio (TTM)", None)
             eps = fundamentals.get("EPS (TTM)", None)
+
             if (
                 latest['Rel_Volume'] > 1.5 and
                 30 <= latest['RSI'] <= 70 and
@@ -99,6 +101,7 @@ def run_screener(tickers):
                 })
         except Exception as e:
             print(f"Error processing {ticker}: {e}")
+
     global LATEST_RESULTS
     LATEST_RESULTS = pd.DataFrame(results)
     return LATEST_RESULTS
