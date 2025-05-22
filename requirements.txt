@@ -8,3 +8,4 @@ numpy
 pytz
 twilio
 gunicorn
+yahoo_fin
