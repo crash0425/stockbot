@@ -7,7 +7,7 @@ from datetime import datetime
 from ta.momentum import RSIIndicator
 from ta.trend import MACD, SMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange
-from yahoo_fin.stock_info import get_quote_table, get_income_statement, get_company_info
+from yahoo_fin.stock_info import get_quote_table, get_income_statement
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
@@ -20,8 +20,8 @@ def run_screener(tickers):
     for ticker in tickers:
         try:
             # Sector check
-            info = get_company_info(ticker)
-            sector = info.loc['sector'][0] if 'sector' in info.index else None
+            info = yf.Ticker(ticker).info
+            sector = info.get('sector', None)
             if sector != 'Technology':
                 continue
 
