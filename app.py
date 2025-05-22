@@ -5,6 +5,21 @@ from yahoo_fin.stock_info import tickers_sp500
 
 app = Flask(__name__)
 
+def generate_summary(df):
+    if 'Signal' not in df.columns or df.empty:
+        return "No data available."
+
+    strong = df[df['Signal'] == '🌟 Strong Buy']
+    weak = df[df['Signal'].str.lower().str.contains("none") | df['Signal'].str.lower().str.contains("no")]
+
+    if len(strong) >= 5:
+        top_tickers = ', '.join(strong['Ticker'].tolist()[:5])
+        return f"Strong bullish momentum detected in: {top_tickers}. Check for possible swing entries."
+    elif len(weak) >= len(df) * 0.8:
+        return "Mostly weak or indecisive signals across the market. Consider holding or watching."
+    else:
+        return "Market appears mixed. A few opportunities exist, but broader confirmation is lacking."
+
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
@@ -20,6 +35,7 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <h1>📈 Daily Swing Trade Screener</h1>
+    <p><strong>🧠 Market Insight:</strong> {{ summary }}</p>
     <table>
         <thead>
             <tr>
@@ -46,7 +62,8 @@ def home():
 def screener():
     tickers = tickers_sp500()
     df = run_screener(tickers)
-    return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"))
+    summary = generate_summary(df)
+    return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"), summary=summary)
 
 @app.route("/test-alert")
 def test_alert():
