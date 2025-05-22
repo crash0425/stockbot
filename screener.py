@@ -5,106 +5,87 @@ import numpy as np
 import pytz
 from datetime import datetime
 from ta.momentum import RSIIndicator
-from ta.trend import MACD
-from ta.volatility import BollingerBands
+from ta.trend import MACD, SMAIndicator
+from ta.volatility import BollingerBands, AverageTrueRange
+
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 
-# Tickers to scan
-TICKERS = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'META', 'AMZN', 'GOOGL', 'JPM', 'UNH', 'HD']
-
-# Shared models
-rf = RandomForestClassifier(n_estimators=100, random_state=42)
-xgb = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
-logreg = LogisticRegression()
-
 # Cached results
 LATEST_RESULTS = pd.DataFrame()
 
-def engineer_features(df):
-    df['Return_1d'] = df['Close'].pct_change()
-    df['Target'] = (df['Close'].shift(-5) > df['Close'] * 1.02).astype(int)
-    df['RSI'] = RSIIndicator(df['Close']).rsi()
-    macd = MACD(df['Close'])
-    df['MACD'] = macd.macd()
-    df['MACD_Signal'] = macd.macd_signal()
-    bb = BollingerBands(df['Close'])
-    df['BB_High'] = bb.bollinger_hband()
-    df['BB_Low'] = bb.bollinger_lband()
-    return df.dropna()
-
-def backtest_model(df, features):
-    X = df[features]
-    y = df['Target']
-    preds = []
-    for i in range(200, len(df) - 5):
-        X_train = X[:i]
-        y_train = y[:i]
-        X_pred = X[i:i+1]
-
-        rf.fit(X_train, y_train)
-        xgb.fit(X_train, y_train)
-        logreg.fit(X_train, y_train)
-
-        avg_prob = (rf.predict_proba(X_pred)[:, 1][0] +
-                    xgb.predict_proba(X_pred)[:, 1][0] +
-                    logreg.predict_proba(X_pred)[:, 1][0]) / 3
-        pred = 1 if avg_prob > 0.6 else 0
-        actual = y[i]
-        preds.append((pred, actual))
-
-    correct = sum(1 for p, a in preds if p == a and p == 1)
-    total = sum(1 for p, _ in preds if p == 1)
-    return round((correct / total) * 100, 1) if total else 0, total
-
-def run_screener():
-    global LATEST_RESULTS
+def run_screener(tickers):
     results = []
-    for ticker in TICKERS:
+    for ticker in tickers:
+        if not ticker.isalpha() or len(ticker) < 1:
+            continue
         try:
-            df = yf.download(ticker, period='1y', interval='1d')
-            if df.shape[0] < 30 or df.isnull().sum().sum() > 10:
-                print(f"Skipping {ticker} due to insufficient or messy data")
-                continue
-            if df.empty:
-                print(f"No data for {ticker}")
+            # Sector check
+            # info = yf.Ticker(ticker).info  # Temporarily disabled to reduce memory load
+            sector = 'Technology'  # Assume tech sector for testing
+            if sector != 'Technology':
                 continue
 
-            df = engineer_features(df)
-            if df.empty:
-                print(f"No engineered data for {ticker}")
+            # Historical price data
+            df = yf.download(ticker, period='6mo', interval='1d')
+            if df.empty or len(df) < 50:
                 continue
 
-            features = ['RSI', 'MACD', 'MACD_Signal', 'BB_High', 'BB_Low', 'Return_1d']
-            X = df[features]
-            y = df['Target']
-            X_train, X_test = X[:-1], X[-1:]
-            y_train = y[:-1]
+            df['20ma'] = df['Close'].rolling(window=20).mean()
+            df['50ma'] = df['Close'].rolling(window=50).mean()
+            df['200ma'] = df['Close'].rolling(window=200).mean()
+            df['above_20ma'] = df['Close'] > df['20ma']
+            df['above_50ma'] = df['Close'] > df['50ma']
+            df['above_200ma'] = df['Close'] > df['200ma']
 
-            rf.fit(X_train, y_train)
-            xgb.fit(X_train, y_train)
-            logreg.fit(X_train, y_train)
+            # Indicators
+            df['RSI'] = RSIIndicator(df['Close']).rsi()
+            macd = MACD(df['Close'])
+            df['MACD'] = macd.macd()
+            df['MACD_Signal'] = macd.macd_signal()
+            bb = BollingerBands(df['Close'])
+            df['BB_High'] = bb.bollinger_hband()
+            df['BB_Low'] = bb.bollinger_lband()
+            atr = AverageTrueRange(df['High'], df['Low'], df['Close'])
+            df['ATR'] = atr.average_true_range()
 
-            avg_prob = (rf.predict_proba(X_test)[:, 1][0] +
-                        xgb.predict_proba(X_test)[:, 1][0] +
-                        logreg.predict_proba(X_test)[:, 1][0]) / 3
+            # Relative volume
+            df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
+            df['Rel_Volume'] = df['Volume'] / df['Volume_MA']
 
-            if avg_prob > 0.6:
-                win_rate, past_signals = backtest_model(df, features)
-                signal_label = '🌟 Strong Buy' if avg_prob > 0.7 and win_rate > 65 else '✅ Buy'
+            latest = df.iloc[-1]
+
+            # Fundamentals temporarily disabled to reduce memory load
+            pe_ratio = None
+            eps = None
+
+            if (
+                latest['Rel_Volume'] > 1.2 and
+                20 <= latest['RSI'] <= 80 and
+                latest['MACD'] > latest['MACD_Signal']
+            ):
+                explanation = f"RSI: {round(latest['RSI'], 2)}, MACD > Signal: {latest['MACD'] > latest['MACD_Signal']}, Price above 50MA: {latest['above_50ma']}, Volume surge: Rel Vol = {round(latest['Rel_Volume'], 2)}"
                 results.append({
                     'Ticker': ticker,
-                    'Date': df.index[-1].date(),
-                    'RSI': round(X_test['RSI'].values[0], 2),
-                    'MACD': round(X_test['MACD'].values[0], 2),
-                    'Confidence': f"{avg_prob * 100:.1f}%",
-                    'Backtest Win Rate': f"{win_rate}%",
-                    'Past Signals': past_signals,
-                    'Signal': signal_label
+                    'Close': round(latest['Close'], 2),
+                    'Volume': int(latest['Volume']),
+                    'Rel Vol': round(latest['Rel_Volume'], 2),
+                    'RSI': round(latest['RSI'], 2),
+                    'ATR': round(latest['ATR'], 2),
+                    'Above 50MA': latest['above_50ma'],
+                    'MACD > Signal': latest['MACD'] > latest['MACD_Signal'],
+                    'Near BB High': latest['Close'] > latest['BB_High'] * 0.95,
+                    'Signal': '🌟 Strong Buy',
+                    'Explanation': explanation,
+                    
+                    
                 })
         except Exception as e:
             print(f"Error processing {ticker}: {e}")
 
+    global LATEST_RESULTS
     LATEST_RESULTS = pd.DataFrame(results)
-    return LATEST_RESULTS if not LATEST_RESULTS.empty else pd.DataFrame([{"Message": "No strong signals today."}])
+    if LATEST_RESULTS.empty:
+        LATEST_RESULTS = pd.DataFrame([{"Ticker": "No matches", "Signal": "None"}])
+    return LATEST_RESULTS
