@@ -1,7 +1,7 @@
 # app.py
 from flask import Flask, render_template_string
 from screener import run_screener
-from yahoo_fin.stock_info import tickers_sp500
+from yahoo_fin.stock_info import tickers_sp500, tickers_nasdaq
 
 app = Flask(__name__)
 
@@ -60,7 +60,7 @@ def home():
 
 @app.route("/screener")
 def screener():
-    tickers = tickers_sp500()
+    tickers = list(set(tickers_sp500() + tickers_nasdaq()))
     df = run_screener(tickers)
     summary = generate_summary(df)
     return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"), summary=summary)
