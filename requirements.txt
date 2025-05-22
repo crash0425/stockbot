@@ -9,3 +9,4 @@ pytz
 twilio
 gunicorn
 yahoo_fin
+requests_html
