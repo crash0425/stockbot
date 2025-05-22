@@ -44,13 +44,13 @@ def home():
 
 @app.route("/screener")
 def screener():
-    tickers = tickers_sp500()[:250]
+    tickers = tickers_sp500()
     df = run_screener(tickers)
     return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"))
 
 @app.route("/test-alert")
 def test_alert():
-    tickers = tickers_sp500()[:100]
+    tickers = tickers_sp500()
     df = run_screener(tickers)
     strong_buys = df[df['Signal'] == '🌟 Strong Buy']['Ticker'].tolist() if 'Signal' in df.columns else []
     return f"Strong Buy tickers: {', '.join(strong_buys) if strong_buys else 'None'}"
