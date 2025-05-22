@@ -5,97 +5,100 @@ import numpy as np
 import pytz
 from datetime import datetime
 from ta.momentum import RSIIndicator
-from ta.trend import MACD
-from ta.volatility import BollingerBands
+from ta.trend import MACD, SMAIndicator
+from ta.volatility import BollingerBands, AverageTrueRange
+from yahoo_fin.stock_info import get_quote_table
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from xgboost import XGBClassifier
 
-# Tickers to scan
-TICKERS = ['AAPL', 'MSFT', 'NVDA', 'TSLA', 'META', 'AMZN', 'GOOGL', 'JPM', 'UNH', 'HD']
-
-# Shared models
-rf = RandomForestClassifier(n_estimators=100, random_state=42)
-xgb = XGBClassifier(use_label_encoder=False, eval_metric='logloss')
-logreg = LogisticRegression()
-
 # Cached results
 LATEST_RESULTS = pd.DataFrame()
 
-def engineer_features(df):
-    df['Return_1d'] = df['Close'].pct_change()
-    df['Target'] = (df['Close'].shift(-5) > df['Close'] * 1.02).astype(int)
-    df['RSI'] = RSIIndicator(df['Close']).rsi()
-    macd = MACD(df['Close'])
-    df['MACD'] = macd.macd()
-    df['MACD_Signal'] = macd.macd_signal()
-    bb = BollingerBands(df['Close'])
-    df['BB_High'] = bb.bollinger_hband()
-    df['BB_Low'] = bb.bollinger_lband()
-    return df.dropna()
+def run_screener(tickers):
+    from yahoo_fin.stock_info import get_quote_table, get_income_statement, get_company_info
+    from yahoo_fin.stock_info import get_quote_table, get_income_statement
+    from yahoo_fin.stock_info import get_quote_table
+    results = []
+    for ticker in tickers:
+        try:
+            info = get_company_info(ticker)
+            sector = info.loc['sector'][0] if 'sector' in info.index else None
+            if sector != 'Technology':
+                continue
+        try:
+            df = yf.download(ticker, period='6mo', interval='1d')
+            if df.empty or len(df) < 50:
+                continue
 
-def backtest_model(df, features):
-    X = df[features]
-    y = df['Target']
-    preds = []
-    for i in range(200, len(df) - 5):
-        X_train = X[:i]
-        y_train = y[:i]
-        X_pred = X[i:i+1]
+            df['20ma'] = df['Close'].rolling(window=20).mean()
+            df['50ma'] = df['Close'].rolling(window=50).mean()
+            df['200ma'] = df['Close'].rolling(window=200).mean()
+            df['above_20ma'] = df['Close'] > df['20ma']
+            df['above_50ma'] = df['Close'] > df['50ma']
+            df['above_200ma'] = df['Close'] > df['200ma']
 
-        rf.fit(X_train, y_train)
-        xgb.fit(X_train, y_train)
-        logreg.fit(X_train, y_train)
+            # Indicators
+            df['RSI'] = RSIIndicator(df['Close']).rsi()
+            macd = MACD(df['Close'])
+            df['MACD'] = macd.macd()
+            df['MACD_Signal'] = macd.macd_signal()
+            bb = BollingerBands(df['Close'])
+            df['BB_High'] = bb.bollinger_hband()
+            df['BB_Low'] = bb.bollinger_lband()
+            atr = AverageTrueRange(df['High'], df['Low'], df['Close'])
+            df['ATR'] = atr.average_true_range()
 
-        avg_prob = (rf.predict_proba(X_pred)[:, 1][0] +
-                    xgb.predict_proba(X_pred)[:, 1][0] +
-                    logreg.predict_proba(X_pred)[:, 1][0]) / 3
-        pred = 1 if avg_prob > 0.6 else 0
-        actual = y[i]
-        preds.append((pred, actual))
+            # Relative volume
+            df['Volume_MA'] = df['Volume'].rolling(window=20).mean()
+            df['Rel_Volume'] = df['Volume'] / df['Volume_MA']
 
-    correct = sum(1 for p, a in preds if p == a and p == 1)
-    total = sum(1 for p, _ in preds if p == 1)
-    return round((correct / total) * 100, 1) if total else 0, total
+            latest = df.iloc[-1]
 
-def run_screener():
-    global LATEST_RESULTS
-    now_est = datetime.now(pytz.timezone('US/Eastern'))
-    if now_est.hour == 9:
-        results = []
-        for ticker in TICKERS:
+            fundamentals = get_quote_table(ticker, dict_result=True)
+            income_statement = get_income_statement(ticker, quarterly=False)
+            revenue_growth = None
+            earnings_growth = None
             try:
-                df = yf.download(ticker, period='1y', interval='1d')
-                df = engineer_features(df)
-                features = ['RSI', 'MACD', 'MACD_Signal', 'BB_High', 'BB_Low', 'Return_1d']
-                X = df[features]
-                y = df['Target']
-                X_train, X_test = X[:-1], X[-1:]
-                y_train = y[:-1]
-
-                rf.fit(X_train, y_train)
-                xgb.fit(X_train, y_train)
-                logreg.fit(X_train, y_train)
-
-                avg_prob = (rf.predict_proba(X_test)[:, 1][0] +
-                            xgb.predict_proba(X_test)[:, 1][0] +
-                            logreg.predict_proba(X_test)[:, 1][0]) / 3
-
-                if avg_prob > 0.6:
-                    win_rate, past_signals = backtest_model(df, features)
-                    signal_label = '🌟 Strong Buy' if avg_prob > 0.7 and win_rate > 65 else '✅ Buy'
-                    results.append({
-                        'Ticker': ticker,
-                        'Date': df.index[-1].date(),
-                        'RSI': round(X_test['RSI'].values[0], 2),
-                        'MACD': round(X_test['MACD'].values[0], 2),
-                        'Confidence': f"{avg_prob * 100:.1f}%",
-                        'Backtest Win Rate': f"{win_rate}%",
-                        'Past Signals': past_signals,
-                        'Signal': signal_label
-                    })
-            except Exception as e:
-                print(f"Error processing {ticker}: {e}")
-        LATEST_RESULTS = pd.DataFrame(results)
-
-    return LATEST_RESULTS if not LATEST_RESULTS.empty else pd.DataFrame([{"Message": "Waiting for 9AM EST run."}])
+                revenue_current = income_statement.loc['totalRevenue'].iloc[0]
+                revenue_prev = income_statement.loc['totalRevenue'].iloc[1]
+                earnings_current = income_statement.loc['netIncome'].iloc[0]
+                earnings_prev = income_statement.loc['netIncome'].iloc[1]
+                revenue_growth = (revenue_current - revenue_prev) / revenue_prev
+                earnings_growth = (earnings_current - earnings_prev) / abs(earnings_prev)
+            except:
+                pass
+            pe_ratio = fundamentals.get("PE Ratio (TTM)", None)
+            eps = fundamentals.get("EPS (TTM)", None)
+            if (
+                latest['Rel_Volume'] > 1.5 and
+                30 <= latest['RSI'] <= 70 and
+                latest['above_50ma'] and
+                latest['Close'] > latest['BB_High'] * 0.95 and
+                latest['MACD'] > latest['MACD_Signal'] and
+                (pe_ratio is None or 5 < pe_ratio < 50) and
+                (eps is not None and eps > 0) and
+                (revenue_growth is not None and revenue_growth > 0.05) and
+                (earnings_growth is not None and earnings_growth > 0.05)
+            ):
+                results.append({
+                    'Ticker': ticker,
+                    'Close': round(latest['Close'], 2),
+                    'Volume': int(latest['Volume']),
+                    'Rel Vol': round(latest['Rel_Volume'], 2),
+                    'RSI': round(latest['RSI'], 2),
+                    'ATR': round(latest['ATR'], 2),
+                    'Above 50MA': latest['above_50ma'],
+                    'MACD > Signal': latest['MACD'] > latest['MACD_Signal'],
+                    'Near BB High': latest['Close'] > latest['BB_High'] * 0.95,
+                    'Signal': '🌟 Strong Buy',
+                    'PE Ratio': pe_ratio,
+                    'EPS': eps,
+                    'Revenue Growth': round(revenue_growth * 100, 2) if revenue_growth else None,
+                    'Earnings Growth': round(earnings_growth * 100, 2) if earnings_growth else None
+                })
+        except Exception as e:
+            print(f"Error processing {ticker}: {e}")
+    global LATEST_RESULTS
+    LATEST_RESULTS = pd.DataFrame(results)
+    return LATEST_RESULTS
