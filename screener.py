@@ -29,7 +29,8 @@ def run_screener(tickers):
 
             # Historical price data
             df = yf.download(ticker, period='6mo', interval='1d')
-            if df.empty or len(df) < 50:
+            if df.empty or len(df) < 50 or df.isnull().sum().sum() > 0 or df.isna().any().any():
+                print(f"Skipping {ticker}: insufficient or corrupted data")
                 continue
 
             df['20ma'] = df['Close'].rolling(window=20).mean()
