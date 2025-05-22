@@ -20,8 +20,8 @@ def run_screener(tickers):
     for ticker in tickers:
         try:
             # Sector check
-            info = yf.Ticker(ticker).info
-            sector = info.get('sector', None)
+            # info = yf.Ticker(ticker).info  # Temporarily disabled to reduce memory load
+            sector = 'Technology'  # Assume tech sector for testing
             if sector != 'Technology':
                 continue
 
@@ -54,18 +54,14 @@ def run_screener(tickers):
 
             latest = df.iloc[-1]
 
-            # Fundamentals (via yfinance)
-            pe_ratio = info.get("trailingPE", None)
-            eps = info.get("trailingEps", None)
+            # Fundamentals temporarily disabled to reduce memory load
+            pe_ratio = None
+            eps = None
 
             if (
-                latest['Rel_Volume'] > 1.5 and
-                30 <= latest['RSI'] <= 70 and
-                latest['above_50ma'] and
-                latest['Close'] > latest['BB_High'] * 0.95 and
-                latest['MACD'] > latest['MACD_Signal'] and
-                (pe_ratio is None or 5 < pe_ratio < 50) and
-                (eps is not None and eps > 0) 
+                latest['Rel_Volume'] > 1.2 and
+                20 <= latest['RSI'] <= 80 and
+                latest['MACD'] > latest['MACD_Signal']
             ):
                 explanation = f"RSI: {round(latest['RSI'], 2)}, MACD > Signal: {latest['MACD'] > latest['MACD_Signal']}, Price above 50MA: {latest['above_50ma']}, Volume surge: Rel Vol = {round(latest['Rel_Volume'], 2)}"
                 results.append({
@@ -80,8 +76,7 @@ def run_screener(tickers):
                     'Near BB High': latest['Close'] > latest['BB_High'] * 0.95,
                     'Signal': '🌟 Strong Buy',
                     'Explanation': explanation,
-                    'PE Ratio': pe_ratio,
-                    'EPS': eps,
+                    
                     
                 })
         except Exception as e:
@@ -89,4 +84,6 @@ def run_screener(tickers):
 
     global LATEST_RESULTS
     LATEST_RESULTS = pd.DataFrame(results)
+    if LATEST_RESULTS.empty:
+        LATEST_RESULTS = pd.DataFrame([{"Ticker": "No matches", "Signal": "None"}])
     return LATEST_RESULTS
