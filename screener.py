@@ -56,19 +56,7 @@ def run_screener(tickers):
 
             # Fundamentals
             fundamentals = get_quote_table(ticker, dict_result=True)
-            income_statement = get_income_statement(ticker, quarterly=False)
-            revenue_growth = None
-            earnings_growth = None
-            try:
-                revenue_current = income_statement.loc['totalRevenue'].iloc[0]
-                revenue_prev = income_statement.loc['totalRevenue'].iloc[1]
-                earnings_current = income_statement.loc['netIncome'].iloc[0]
-                earnings_prev = income_statement.loc['netIncome'].iloc[1]
-                revenue_growth = (revenue_current - revenue_prev) / revenue_prev
-                earnings_growth = (earnings_current - earnings_prev) / abs(earnings_prev)
-            except:
-                pass
-
+            
             pe_ratio = fundamentals.get("PE Ratio (TTM)", None)
             eps = fundamentals.get("EPS (TTM)", None)
 
@@ -79,10 +67,9 @@ def run_screener(tickers):
                 latest['Close'] > latest['BB_High'] * 0.95 and
                 latest['MACD'] > latest['MACD_Signal'] and
                 (pe_ratio is None or 5 < pe_ratio < 50) and
-                (eps is not None and eps > 0) and
-                (revenue_growth is not None and revenue_growth > 0.05) and
-                (earnings_growth is not None and earnings_growth > 0.05)
+                (eps is not None and eps > 0) 
             ):
+                explanation = f"RSI: {round(latest['RSI'], 2)}, MACD > Signal: {latest['MACD'] > latest['MACD_Signal']}, Price above 50MA: {latest['above_50ma']}, Volume surge: Rel Vol = {round(latest['Rel_Volume'], 2)}"
                 results.append({
                     'Ticker': ticker,
                     'Close': round(latest['Close'], 2),
@@ -94,10 +81,10 @@ def run_screener(tickers):
                     'MACD > Signal': latest['MACD'] > latest['MACD_Signal'],
                     'Near BB High': latest['Close'] > latest['BB_High'] * 0.95,
                     'Signal': '🌟 Strong Buy',
+                    'Explanation': explanation,
                     'PE Ratio': pe_ratio,
                     'EPS': eps,
-                    'Revenue Growth': round(revenue_growth * 100, 2) if revenue_growth else None,
-                    'Earnings Growth': round(earnings_growth * 100, 2) if earnings_growth else None
+                    
                 })
         except Exception as e:
             print(f"Error processing {ticker}: {e}")
