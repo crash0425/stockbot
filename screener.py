@@ -17,6 +17,7 @@ LATEST_RESULTS = pd.DataFrame()
 
 def run_screener(tickers):
     results = []
+    import time
     for ticker in tickers:
         if not ticker.isalpha() or len(ticker) < 1:
             continue
@@ -82,6 +83,7 @@ def run_screener(tickers):
                     
                     
                 })
+                    time.sleep(0.1)
         except Exception as e:
             print(f"Error processing {ticker}: {e}")
 
