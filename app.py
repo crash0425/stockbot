@@ -11,10 +11,16 @@ def generate_summary(df):
 
     strong = df[df['Signal'] == '🌟 Strong Buy']
     weak = df[df['Signal'].str.lower().str.contains("none") | df['Signal'].str.lower().str.contains("no")]
+    neutral = df[df['Signal'].str.lower().str.contains("neutral")]
+    bearish = df[df['Signal'].str.lower().str.contains("bear")]
 
     if len(strong) >= 5:
         top_tickers = ', '.join(strong['Ticker'].tolist()[:5])
         return f"Strong bullish momentum detected in: {top_tickers}. Check for possible swing entries."
+    elif len(bearish) >= len(df) * 0.5:
+        return "Bearish sentiment dominating this batch. Consider defensive plays or avoid new entries."
+    elif len(neutral) >= len(df) * 0.5:
+        return "Majority of tickers are in neutral patterns. Market may be consolidating."
     elif len(weak) >= len(df) * 0.8:
         return "Mostly weak or indecisive signals across the market. Consider holding or watching."
     else:
@@ -31,6 +37,7 @@ HTML_TEMPLATE = """
         th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
         th { background-color: #f2f2f2; }
         tr:hover { background-color: #f9f9f9; }
+        button { font-size: 16px; padding: 10px 20px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -50,7 +57,7 @@ HTML_TEMPLATE = """
             {% endfor %}
         </tbody>
     </table>
-<form action="/screener" method="get" style="margin-top: 20px; text-align: center;">
+    <form action="/screener" method="get" style="margin-top: 20px; text-align: center;">
         <input type="hidden" name="batch" value="{{ next_batch }}">
         <button type="submit">➡️ Next Batch</button>
     </form>
@@ -64,7 +71,6 @@ def home():
 
 @app.route("/screener")
 def screener():
-    from flask import request
     batch_raw = request.args.get("batch", 0)
     try:
         batch = int(batch_raw)
