@@ -56,7 +56,7 @@ HTML_TEMPLATE = """
             {% endfor %}
         </tbody>
     </table>
-<form action="/screener" method="get" style="margin-top: 20px; text-align: center;">
+    <form action="/screener" method="get" style="margin-top: 20px; text-align: center;">
         <input type="hidden" name="batch" value="{{ next_batch }}">
         <button type="submit">➡️ Next Batch</button>
     </form>
@@ -82,14 +82,14 @@ def screener():
     start = batch * chunk_size
     end = start + chunk_size
     batch_tickers = tickers[start:end]
-    df, errors = run_screener(batch_tickers, exclude_errors=True)
+    df, errors = run_screener(batch_tickers, exclude_error_tickers=True)
     summary = generate_summary(df)
     return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"), summary=summary, request=request, next_batch=next_batch, errors=errors)
 
 @app.route("/test-alert")
 def test_alert():
     tickers = tickers_sp500()
-    df, _ = run_screener(tickers, exclude_errors=True)
+    df, _ = run_screener(tickers)
     strong_buys = df[df['Signal'] == '🌟 Strong Buy']['Ticker'].tolist() if 'Signal' in df.columns else []
     return f"Strong Buy tickers: {', '.join(strong_buys) if strong_buys else 'None'}"
 
