@@ -51,7 +51,7 @@ HTML_TEMPLATE = """
         </tbody>
     </table>
 <form action="/screener" method="get" style="margin-top: 20px; text-align: center;">
-        <input type="hidden" name="batch" value="{{ request.args.get('batch', 0, type=int) + 1 }}">
+        <input type="hidden" name="batch" value="{{ next_batch }}">
         <button type="submit">➡️ Next Batch</button>
     </form>
 </body>
@@ -65,7 +65,12 @@ def home():
 @app.route("/screener")
 def screener():
     from flask import request
-    batch = int(request.args.get("batch", 0))
+    batch_raw = request.args.get("batch", 0)
+    try:
+        batch = int(batch_raw)
+    except ValueError:
+        batch = 0
+    next_batch = batch + 1
     tickers = list(set(tickers_sp500() + tickers_nasdaq()))
     chunk_size = 25
     start = batch * chunk_size
@@ -73,7 +78,7 @@ def screener():
     batch_tickers = tickers[start:end]
     df = run_screener(batch_tickers)
     summary = generate_summary(df)
-    return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"), summary=summary, request=request)
+    return render_template_string(HTML_TEMPLATE, columns=df.columns, data=df.to_dict(orient="records"), summary=summary, request=request, next_batch=next_batch)
 
 @app.route("/test-alert")
 def test_alert():
