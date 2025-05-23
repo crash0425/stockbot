@@ -67,7 +67,7 @@ def screener():
     from flask import request
     batch = int(request.args.get("batch", 0))
     tickers = list(set(tickers_sp500() + tickers_nasdaq()))
-    chunk_size = 50
+    chunk_size = 25
     start = batch * chunk_size
     end = start + chunk_size
     batch_tickers = tickers[start:end]
